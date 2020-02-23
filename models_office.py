@@ -5,7 +5,7 @@ from torch.nn.parameter import Parameter
 
 
 class VaDE(nn.Module):
-    def __init__(self, conv_dim=64, latent_dim=31, n_classes=31):
+    def __init__(self, conv_dim=64, latent_dim=10, n_classes=31):
         super(VaDE, self).__init__()
         self.pi_prior = Parameter(torch.ones(n_classes)/n_classes)
         self.mu_prior = Parameter(torch.randn(n_classes, latent_dim))
@@ -54,7 +54,7 @@ class VaDE(nn.Module):
         return x_reconst, mu, log_var, z
 
 class Autoencoder(nn.Module):
-    def __init__(self, conv_dim=64, latent_dim=256):
+    def __init__(self, conv_dim=64, latent_dim=10):
         super(Autoencoder, self).__init__()
         self.cnn4 = Conv(conv_dim*6, conv_dim*6, 3, 1, 1, groups=2, bn=False)
         self.cnn5 = Conv(conv_dim*6, conv_dim*4, 3, 1, 1, groups=2, bn=False)
