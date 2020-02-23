@@ -5,33 +5,56 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader, TensorDataset
 
 
-def get_mnist(data_dir='./data/mnist/', batch_size=128):
+def get_mnist(args, data_dir='./data/mnist/'):
     train = datasets.MNIST(root=data_dir, train=True, download=True)
     test = datasets.MNIST(root=data_dir, train=False, download=True)
 
     x = torch.cat([train.data.float().view(-1,784)/255., test.data.float().view(-1,784)/255.], 0)
     y = torch.cat([train.targets, test.targets], 0)
 
-    dataset = dict()
-    dataset['x'] = x
-    dataset['y'] = y
+    x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
+    dataloader_sup=DataLoader(TensorDataset(x_sup,y_sup), batch_size=args.batch_size, 
+                              shuffle=True, num_workers=4)
 
-    dataloader=DataLoader(TensorDataset(x,y), batch_size=batch_size, 
-                          shuffle=True, num_workers=4)
-    return dataloader
+    x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
+    dataloader_unsup=DataLoader(TensorDataset(x_unsup,y_unsup), batch_size=args.batch_size, 
+                                shuffle=True, num_workers=4)
+    return dataloader_sup, dataloader_unsup
 
 
-def get_webcam(data_dir='./data/office31/webcam/images/', batch_size=128):
+def get_webcam(args, data_dir='./data/office31/webcam/images/'):
     data = datasets.ImageFolder(data_dir)
 
     x = np.array([np.array(data[i][0]) for i in range(len(data))])
     y = np.array([data[i][1] for i in range(len(data))])
+    
+    x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
+    data_sup = CaffeTransform(x_sup, y_sup)
+    dataloader_sup = DataLoader(data_sup, batch_size=args.batch_size, 
+                                shuffle=True, num_workers=4)
 
-    data = CaffeTransform(x, y)
+    x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
+    data_unsup = CaffeTransform(x_unsup, y_unsup)
+    dataloader_unsup = DataLoader(data_unsup, batch_size=args.batch_size, 
+                                  shuffle=True, num_workers=4)
+    return dataloader_sup, dataloader_unsup
 
-    dataloader = DataLoader(data, batch_size=batch_size, 
-                          shuffle=True, num_workers=4)
-    return dataloader
+
+def get_labeled_samples(X, y, n_samples):
+    np.random.seed(0)
+
+    classes = np.unique(y)
+    indxs = [np.where(y == class_) for class_ in classes]
+
+    ix = []
+    for indx in indxs:
+        ix.extend(np.random.choice(indx[0], n_samples, replace = False))
+
+    np.random.shuffle(ix)
+    X_sup = X[ix]
+    y_sup = y[ix]
+
+    return X_sup, y_sup, ix
 
 
 class CaffeTransform(torch.utils.data.Dataset):

@@ -2,10 +2,12 @@ import math
 import torch
 import numpy as np
 from torch import optim
+from itertools import cycle
 import torch.nn.functional as F
 from sklearn.mixture import GaussianMixture
-from sklearn.utils.linear_assignment_ import linear_assignment
 
+
+from forward_step import ComputeLosses
 
 def weights_init_normal(m):
     classname = m.__class__.__name__
@@ -15,7 +17,7 @@ def weights_init_normal(m):
 class TrainerVaDE:
     """This is the trainer for the Variational Deep Embedding (VaDE).
     """
-    def __init__(self, args, device, dataloader, n_classes):
+    def __init__(self, args, device, dataloader_sup, dataloader_unsup, n_classes):
         if args.dataset == 'mnist':
             from models import Autoencoder, VaDE
             self.autoencoder = Autoencoder().to(device)
@@ -34,7 +36,8 @@ class TrainerVaDE:
             self.freeze_extractor()
             self.VaDE = VaDE().to(device)
 
-        self.dataloader = dataloader
+        self.dataloader_sup = dataloader_sup
+        self.dataloader_unsup = dataloader_unsup
         self.device = device
         self.args = args
         self.n_classes = n_classes
@@ -50,7 +53,7 @@ class TrainerVaDE:
         print('Training the autoencoder...')
         for epoch in range(30):
             total_loss = 0
-            for x, _ in self.dataloader:
+            for x, _ in self.dataloader_unsup:
                 optimizer.zero_grad()
                 x = x.to(self.device)
                 if self.args.dataset == 'webcam':
@@ -104,6 +107,8 @@ class TrainerVaDE:
         self.optimizer = optim.Adam(self.VaDE.parameters(), lr=self.args.lr)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
                     self.optimizer, step_size=10, gamma=0.9)
+
+        self.forward_step = ComputeLosses(self.VaDE, self.args)
         print('Training VaDE...')
         for epoch in range(self.args.epochs):
             self.train_VaDE(epoch)
@@ -115,75 +120,40 @@ class TrainerVaDE:
         self.VaDE.train()
 
         total_loss = 0
-        for x, _ in self.dataloader:
+        for (x_s, y_s), (x_u, _) in zip(cycle(self.source_loader_sup), self.target_loader_unsup):
             self.optimizer.zero_grad()
-            x = x.to(self.device)
+            x_s, y_s = x_s.to(self.device), y_s.to(self.device)
+            x_u = x_u.to(self.device)
             if self.args.dataset == 'webcam':
-                x = self.feature_extractor(x)
-                x = x.detach()
-            x_hat, mu, log_var, z = self.VaDE(x)
-            loss = self.compute_loss(x, x_hat, mu, log_var, z)
+                x_s = self.feature_extractor(x_s)
+                x_s = x_s.detach()
+                x_u = self.feature_extractor(x_u)
+                x_u = x_u.detach()
+
+            loss, reconst_loss, kl_div, acc = self.forward_step.forward('train', x_s, y_s, x_u)
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
-        print('Training VaDE... Epoch: {}, Loss: {}'.format(epoch, 
-              total_loss/len(self.dataloader)))
+        print('Training VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
+              total_loss/len(self.dataloader), acc))
 
 
     def test_VaDE(self, epoch):
         self.VaDE.eval()
         with torch.no_grad():
             total_loss = 0
-            y_true, y_pred = [], []
-            for x, true in self.dataloader:
+            total_acc = 0
+            for x, y in self.dataloader_unsup:
                 x = x.to(self.device)
                 if self.args.dataset == 'webcam':
                     x = self.feature_extractor(x)
                     x = x.detach()
-                x_hat, mu, log_var, z = self.VaDE(x)
-                gamma = self.compute_gamma(z, self.VaDE.pi_prior)
-                pred = torch.argmax(gamma, dim=1)
-                loss = self.compute_loss(x, x_hat, mu, log_var, z)
+                loss, reconst_loss, kl_div, acc = self.forward_step.forward('train', x, y)
                 total_loss += loss.item()
-                y_true.extend(true.numpy())
-                y_pred.extend(pred.cpu().detach().numpy())
+                total_acc += acc.item()
+        print('Testing VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
+                total_loss/len(self.dataloader), total_acc/len(self.dataloader)))
 
-            acc = self.cluster_acc(np.array(y_true), np.array(y_pred))
-            print('Testing VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
-                   total_loss/len(self.dataloader), acc[0]))
-
-
-    def compute_loss(self, x, x_hat, mu, log_var, z):
-        p_c = self.VaDE.pi_prior
-        gamma = self.compute_gamma(z, p_c); print(gamma)
-
-        log_p_x_given_z = F.mse_loss(x_hat, x, reduction='sum')
-        h = log_var.exp().unsqueeze(1) + (mu.unsqueeze(1) - self.VaDE.mu_prior).pow(2)
-        h = torch.sum(self.VaDE.log_var_prior + h / self.VaDE.log_var_prior.exp(), dim=2)
-        log_p_z_given_c = 0.5 * torch.sum(gamma * h)
-        log_p_c = torch.sum(gamma * torch.log(p_c + 1e-9))
-        log_q_c_given_x = torch.sum(gamma * torch.log(gamma + 1e-9))
-        log_q_z_given_x = 0.5 * torch.sum(1 + log_var)
-
-        loss = log_p_x_given_z + log_p_z_given_c - log_p_c +  log_q_c_given_x - log_q_z_given_x
-        loss /= x.size(0)
-        return loss
-    
-    def compute_gamma(self, z, p_c):
-        h = (z.unsqueeze(1) - self.VaDE.mu_prior).pow(2) / self.VaDE.log_var_prior.exp()
-        h += self.VaDE.log_var_prior
-        h += torch.Tensor([np.log(np.pi*2)]).to(self.device)
-        p_z_c = torch.exp(torch.log(p_c + 1e-9).unsqueeze(0) - 0.5 * torch.sum(h, dim=2)) + 1e-9
-        gamma = p_z_c / torch.sum(p_z_c, dim=1, keepdim=True)
-        return gamma
-
-    def cluster_acc(self, real, pred):
-        D = max(pred.max(), real.max())+1
-        w = np.zeros((D,D), dtype=np.int64)
-        for i in range(pred.size):
-            w[pred[i], real[i]] += 1
-        ind = linear_assignment(w.max() - w)
-        return sum([w[i,j] for i,j in ind])*1.0/pred.size*100, w
 
     def freeze_extractor(self):
         for _, param in self.feature_extractor.named_parameters():

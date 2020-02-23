@@ -22,18 +22,22 @@ if __name__ == '__main__':
     parser.add_argument('--dataset', type=str, default='mnist',
                         choices=['mnist', 'webcam'],
                         help='Dataset to be used for training')
+    parser.add_argument('--sup_mul', type=float, default=0.9,
+                        help='Hyperparameters that control the supervised importance')
+    parser.add_argument('--n_shots', type=int, default=1,
+                        help='Number of supervised points to be used')
     args = parser.parse_args()
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     if args.dataset == 'mnist':
-        dataloader = get_mnist(batch_size=args.batch_size)
+        dataloader_sup, dataloader_unsup = get_mnist(args)
         n_classes = 10
     else:
-        dataloader = get_webcam(batch_size=args.batch_size)
+        dataloader_sup, dataloader_unsup = get_webcam(args)
         n_classes = 31
     
-    vade = TrainerVaDE(args, device, dataloader, n_classes)
+    vade = TrainerVaDE(args, device, dataloader_sup, dataloader_unsup, n_classes)
     if args.pretrain==True:
         vade.pretrain()
     vade.train()
