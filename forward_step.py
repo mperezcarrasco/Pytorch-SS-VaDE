@@ -24,10 +24,10 @@ class ComputeLosses:
 
         elif mode=='test':
             reconst_loss, kl_div, probs = self.supervised_loss(x_sup, y_sup)
-            supervised_loss = reconst_loss + kl_div
-            acc = acc = self.compute_metrics(y_sup, probs)
-    
-        return loss, reconst_loss, kl_div, acc
+            loss = reconst_loss + kl_div
+            acc = self.compute_metrics(y_sup, probs)
+
+        return loss, reconst_loss, kl_div, acc*100
 
     def supervised_loss(self, x, y):
         x_hat, mu, log_var, z = self.model(x)
