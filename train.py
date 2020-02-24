@@ -65,6 +65,7 @@ class TrainerVaDE:
                 optimizer.step()
                 total_loss += loss.item()
             print('Training Autoencoder... Epoch: {}, Loss: {}'.format(epoch, total_loss))
+        self.save_weights_ae()
         self.train_GMM() #training a GMM for initialize the VaDE
         self.save_weights_for_VaDE() #saving weights for the VaDE
 
@@ -95,6 +96,13 @@ class TrainerVaDE:
         self.VaDE.mu_prior.data = torch.from_numpy(self.gmm.means_).float().to(self.device)
         self.VaDE.log_var_prior.data = torch.log(torch.from_numpy(self.gmm.covariances_)).float().to(self.device)
         torch.save(self.VaDE.state_dict(), self.args.pretrained_path)    
+
+    def save_weights_ae(self):
+        """Saving the pretrained weights for the encoder, decoder, pi, mu, var.
+        """
+        print('Saving weights.')
+        state = {'state_dict': self.autoencoder.state_dict()}
+        torch.save(state, 'autoencoder_parameters.pth.tar') 
 
     def train(self):
         """
