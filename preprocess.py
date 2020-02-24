@@ -35,7 +35,7 @@ def get_webcam(args, data_dir='./data/office31/webcam/images/'):
 
     x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
     data_unsup = CaffeTransform(x_unsup, y_unsup)
-    dataloader_unsup = DataLoader(data_unsup, batch_size=args.n_shots*31, 
+    dataloader_unsup = DataLoader(data_unsup, batch_size=args.batch_size, 
                                   shuffle=True, num_workers=4)
     return dataloader_sup, dataloader_unsup
 

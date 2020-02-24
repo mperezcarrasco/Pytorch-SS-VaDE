@@ -94,12 +94,12 @@ class TrainerVaDE:
         print('Predicting over Gaussian Mixture Model...')
         x = torch.cat([data[0] for data in self.dataloader_sup]).to(self.device) #all x samples.
         y = torch.cat([data[1] for data in self.dataloader_sup]).to(self.device)
-        x = x[np.argsort(y)]
+        x = x[np.argsort(y.cpu().detach().numpy())]
         if self.args.dataset == 'webcam':
             x = self.feature_extractor(x)
             x = x.detach()
         z = self.autoencoder.encode(x)
-        probas = self.gmm.predict_proba(z)
+        probas = self.gmm.predict_proba(z.cpu().detach().numpy())
         self.assign_GMMS(probas)
     
     def assign_GMMS(self, probas):
@@ -112,7 +112,7 @@ class TrainerVaDE:
             max_ = sorted_[-toselect]
             if max_ in possibilities:
                 assignation.append(max_)
-                nums = np.setdiff1d(nums, max_)
+                possibilities = np.setdiff1d(possibilities, max_)
                 index+=1
                 toselect=1
             else:
