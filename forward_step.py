@@ -20,14 +20,12 @@ class ComputeLosses:
             reconst_loss, kl_div, probs = self.supervised_loss(x_sup, y_sup)
             supervised_loss = reconst_loss + kl_div
             loss = self.alpha * supervised_loss + (1 - self.alpha) * unsupervised_loss
-            y_pred = torch.argmax(probs, dim=1)
-            acc = self.cluster_acc(np.array(y_sup), np.array(y_pred))
+            acc = self.compute_metrics(y_sup, probs)
 
         elif mode=='test':
             reconst_loss, kl_div, probs = self.supervised_loss(x_sup, y_sup)
             supervised_loss = reconst_loss + kl_div
-            y_pred = torch.argmax(probs, dim=1)
-            acc = self.cluster_acc(np.array(y_sup), np.array(y_pred))
+            acc = acc = self.compute_metrics(y_sup, probs)
     
         return loss, reconst_loss, kl_div, acc[0]
 
@@ -86,9 +84,9 @@ class ComputeLosses:
         y_true = y.cpu().detach().numpy()
 
         acc = accuracy_score(y_pred, y_true)
-        f1_macro = f1_score(y_pred, y_true, average='macro')
+        #f1_macro = f1_score(y_pred, y_true, average='macro')
 
-        return acc, f1_macro
+        return acc #, f1_macro
 
     def cluster_acc(self, real, pred):
         D = max(pred.max(), real.max())+1

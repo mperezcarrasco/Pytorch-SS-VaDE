@@ -76,7 +76,7 @@ class TrainerVaDE:
         the priors (pi, mu, var) of the VaDE model.
         """
         print('Fiting Gaussian Mixture Model...')
-        x = torch.cat([data[0] for data in self.dataloader]).to(self.device) #all x samples.
+        x = torch.cat([data[0] for data in self.dataloader_unsup]).to(self.device) #all x samples.
         if self.args.dataset == 'webcam':
             x = self.feature_extractor(x)
             x = x.detach()
@@ -126,9 +126,8 @@ class TrainerVaDE:
 
     def train_VaDE(self, epoch):
         self.VaDE.train()
-
         total_loss = 0
-        for (x_s, y_s), (x_u, _) in zip(cycle(self.source_loader_sup), self.target_loader_unsup):
+        for (x_s, y_s), (x_u, _) in zip(cycle(self.dataloader_sup), self.dataloader_unsup):
             self.optimizer.zero_grad()
             x_s, y_s = x_s.to(self.device), y_s.to(self.device)
             x_u = x_u.to(self.device)
@@ -143,7 +142,7 @@ class TrainerVaDE:
             self.optimizer.step()
             total_loss += loss.item()
         print('Training VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
-              total_loss/len(self.dataloader), acc))
+            total_loss/len(self.dataloader_unsup), acc))
 
 
     def test_VaDE(self, epoch):
@@ -156,12 +155,11 @@ class TrainerVaDE:
                 if self.args.dataset == 'webcam':
                     x = self.feature_extractor(x)
                     x = x.detach()
-                loss, reconst_loss, kl_div, acc = self.forward_step.forward('train', x, y)
+                loss, reconst_loss, kl_div, acc = self.forward_step.forward('test', x, y)
                 total_loss += loss.item()
                 total_acc += acc.item()
         print('Testing VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
-                total_loss/len(self.dataloader), total_acc/len(self.dataloader)))
-
+                total_loss/len(self.dataloader_unsup), total_acc/len(self.dataloader_unsup)))
 
     def freeze_extractor(self):
         for _, param in self.feature_extractor.named_parameters():

@@ -13,11 +13,11 @@ def get_mnist(args, data_dir='./data/mnist/'):
     y = torch.cat([train.targets, test.targets], 0)
 
     x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
-    dataloader_sup=DataLoader(TensorDataset(x_sup,y_sup), batch_size=args.batch_size, 
+    dataloader_sup=DataLoader(TensorDataset(x_sup,y_sup), batch_size=args.n_shots*10, 
                               shuffle=True, num_workers=4)
 
     x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
-    dataloader_unsup=DataLoader(TensorDataset(x_unsup,y_unsup), batch_size=args.batch_size, 
+    dataloader_unsup=DataLoader(TensorDataset(x_unsup,y_unsup), batch_size=args.n_shots*10, 
                                 shuffle=True, num_workers=4)
     return dataloader_sup, dataloader_unsup
 
@@ -30,12 +30,12 @@ def get_webcam(args, data_dir='./data/office31/webcam/images/'):
     
     x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
     data_sup = CaffeTransform(x_sup, y_sup)
-    dataloader_sup = DataLoader(data_sup, batch_size=args.batch_size, 
+    dataloader_sup = DataLoader(data_sup, batch_size=args.n_shots*31, 
                                 shuffle=True, num_workers=4)
 
     x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
     data_unsup = CaffeTransform(x_unsup, y_unsup)
-    dataloader_unsup = DataLoader(data_unsup, batch_size=args.batch_size, 
+    dataloader_unsup = DataLoader(data_unsup, batch_size=args.n_shots*31, 
                                   shuffle=True, num_workers=4)
     return dataloader_sup, dataloader_unsup
 
