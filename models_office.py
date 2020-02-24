@@ -45,7 +45,7 @@ class VaDE(nn.Module):
         h = h.view(-1, 512, 1, 1)
         h = F.relu(self.cnn6(h))
         h = F.relu(self.cnn7(h))
-        return F.relu(self.cnn8(h))
+        return F.sigmoid(self.cnn8(h))
 
     def forward(self, x):
         mu, log_var = self.encode(x)
@@ -103,7 +103,7 @@ class feature_extractor(nn.Module):
             nn.MaxPool2d(kernel_size=3, stride=2),
             nn.LocalResponseNorm(size=5, alpha=1e-04, beta=0.75, k=1),
             nn.Conv2d(256, 384, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True)
+            nn.Sigmoid()
             )
     def forward(self, x):
         return self.features(x)

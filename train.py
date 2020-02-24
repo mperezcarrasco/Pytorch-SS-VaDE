@@ -51,7 +51,7 @@ class TrainerVaDE:
         optimizer = optim.Adam(self.autoencoder.parameters(), lr=0.002)
         self.autoencoder.train()
         print('Training the autoencoder...')
-        for epoch in range(30):
+        for epoch in range(1500):
             total_loss = 0
             for x, _ in self.dataloader_unsup:
                 optimizer.zero_grad()
