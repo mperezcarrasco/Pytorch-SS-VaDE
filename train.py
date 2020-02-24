@@ -139,7 +139,7 @@ class TrainerVaDE:
         """
         print('Saving weights.')
         state = {'state_dict': self.autoencoder.state_dict()}
-        torch.save(state, 'autoencoder_parameters.pth.tar') 
+        torch.save(state, 'weights/autoencoder_parameters.pth.tar') 
 
     def train(self):
         """
