@@ -27,13 +27,13 @@ class ComputeLosses:
             supervised_loss = reconst_loss + kl_div
             acc = acc = self.compute_metrics(y_sup, probs)
     
-        return loss, reconst_loss, kl_div, acc[0]
+        return loss, reconst_loss, kl_div, acc
 
-    def supervised_loss(self, x, y, domain):
+    def supervised_loss(self, x, y):
         x_hat, mu, log_var, z = self.model(x)
 
-        means_batch = self.priors.mu_prior[y, :]
-        covs_batch = self.priors.log_var_prior[y,:].exp()
+        means_batch = self.model.mu_prior[y, :]
+        covs_batch = self.model.log_var_prior[y,:].exp()
         p_c = self.model.pi_prior
 
         kl_div = torch.mean((torch.sum(torch.log(2*np.pi*covs_batch) + \
@@ -47,7 +47,7 @@ class ComputeLosses:
 
         return reconst_loss, kl_div, probs
 
-    def unsupervised_loss(self, x, domain):
+    def unsupervised_loss(self, x):
         x_hat, mu, log_var, z = self.model(x)
 
         means = self.model.mu_prior
@@ -71,7 +71,7 @@ class ComputeLosses:
     
     def compute_pcz(self, z, p_c):
         covs = self.model.log_var_prior.exp()
-        means = self.model.mean
+        means = self.model.mu_prior
 
         h = (z.unsqueeze(1) - means).pow(2) / covs
         h += torch.log(2*np.pi*covs)
