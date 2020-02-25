@@ -9,17 +9,17 @@ def get_mnist(args, data_dir='./data/mnist/'):
     train = datasets.MNIST(root=data_dir, train=True, download=True)
     test = datasets.MNIST(root=data_dir, train=False, download=True)
 
-    x = torch.cat([train.data.float().view(-1,784)/255., test.data.float().view(-1,784)/255.], 0)
-    y = torch.cat([train.targets, test.targets], 0)
-
-    x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
-    dataloader_sup=DataLoader(TensorDataset(x_sup,y_sup), batch_size=args.n_shots*10, 
+    x_train = train.data.float().view(-1,784)/255.
+    y_train = train.targets
+    dataloader_train = DataLoader(TensorDataset(x_train,y_train), batch_size=args.batch_size, 
+                              shuffle=True, num_workers=4)
+    
+    x_test = test.data.float().view(-1,784)/255.
+    y_test = test.targets
+    dataloader_test = DataLoader(TensorDataset(x_test, y_test), batch_size=args.batch_size, 
                               shuffle=True, num_workers=4)
 
-    x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
-    dataloader_unsup=DataLoader(TensorDataset(x_unsup,y_unsup), batch_size=args.n_shots*10, 
-                                shuffle=True, num_workers=4)
-    return dataloader_sup, dataloader_unsup
+    return dataloader_train, dataloader_test
 
 
 def get_webcam(args, data_dir='./data/office31/webcam/images/'):
@@ -27,22 +27,21 @@ def get_webcam(args, data_dir='./data/office31/webcam/images/'):
 
     x = np.array([np.array(data[i][0]) for i in range(len(data))])
     y = np.array([data[i][1] for i in range(len(data))])
-    
-    x_sup, y_sup, ixs = get_labeled_samples(x, y, args.n_shots)
-    data_sup = CaffeTransform(x_sup, y_sup)
-    dataloader_sup = DataLoader(data_sup, batch_size=args.n_shots*31, 
-                                shuffle=True, num_workers=4)
 
-    x_unsup, y_unsup = np.delete(x, ixs), np.delete(y, ixs)
-    data_unsup = CaffeTransform(x_unsup, y_unsup)
-    dataloader_unsup = DataLoader(data_unsup, batch_size=args.batch_size, 
+    x_test, y_test, ixs = get_labeled_samples(x, y, 3)
+    data_test = CaffeTransform(x_test, y_test, train=False)
+    dataloader_test = DataLoader(data_test, batch_size=args.batch_size, 
+                                shuffle=False, num_workers=4)
+
+    x_train, y_train = np.delete(x, ixs), np.delete(y, ixs)
+    data_train = CaffeTransform(x_train, y_train, train=True)
+    dataloader_train = DataLoader(data_train, batch_size=args.batch_size, 
                                   shuffle=True, num_workers=4)
-    return dataloader_sup, dataloader_unsup
+    return dataloader_train, dataloader_test
 
 
 def get_labeled_samples(X, y, n_samples):
     np.random.seed(0)
-
     classes = np.unique(y)
     indxs = [np.where(y == class_) for class_ in classes]
 

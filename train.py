@@ -17,7 +17,7 @@ def weights_init_normal(m):
 class TrainerVaDE:
     """This is the trainer for the Variational Deep Embedding (VaDE).
     """
-    def __init__(self, args, device, dataloader_sup, dataloader_unsup, n_classes):
+    def __init__(self, args, device, dataloader_train, dataloader_test, n_classes):
         if args.dataset == 'mnist':
             from models import Autoencoder, VaDE
             self.autoencoder = Autoencoder().to(device)
@@ -36,8 +36,8 @@ class TrainerVaDE:
             self.freeze_extractor()
             self.VaDE = VaDE().to(device)
 
-        self.dataloader_sup = dataloader_sup
-        self.dataloader_unsup = dataloader_unsup
+        self.dataloader_train = dataloader_train
+        self.dataloader_test = dataloader_test
         self.device = device
         self.args = args
         self.n_classes = n_classes
@@ -51,9 +51,9 @@ class TrainerVaDE:
         optimizer = optim.Adam(self.autoencoder.parameters(), lr=0.002)
         self.autoencoder.train()
         print('Training the autoencoder...')
-        for epoch in range(1500):
+        for epoch in range(30):
             total_loss = 0
-            for x, _ in self.dataloader_unsup:
+            for x, _ in self.dataloader_train:
                 optimizer.zero_grad()
                 x = x.to(self.device)
                 if self.args.dataset == 'webcam':
@@ -66,9 +66,9 @@ class TrainerVaDE:
                 total_loss += loss.item()
             print('Training Autoencoder... Epoch: {}, Loss: {}'.format(epoch, total_loss))
         self.save_weights_ae()
-        self.train_GMM() #training a GMM for initialize the VaDE
-        self.predict_GMM() #Predict and assign supervised points to its GMM components
-        self.save_weights_for_VaDE() #saving weights for the VaDE
+        #self.train_GMM() #training a GMM for initialize the VaDE
+        #self.predict_GMM() #Predict and assign supervised points to its GMM components
+        #self.save_weights_for_VaDE() #saving weights for the VaDE
 
 
     def train_GMM(self):
@@ -77,7 +77,7 @@ class TrainerVaDE:
         the priors (pi, mu, var) of the VaDE model.
         """
         print('Fiting Gaussian Mixture Model...')
-        x = torch.cat([data[0] for data in self.dataloader_unsup]).to(self.device) #all x samples.
+        x = torch.cat([data[0] for data in self.dataloader]).to(self.device) #all x samples.
         if self.args.dataset == 'webcam':
             x = self.feature_extractor(x)
             x = x.detach()
@@ -92,8 +92,8 @@ class TrainerVaDE:
         the priors (pi, mu, var) of the VaDE model.
         """
         print('Predicting over Gaussian Mixture Model...')
-        x = torch.cat([data[0] for data in self.dataloader_sup]).to(self.device) #all x samples.
-        y = torch.cat([data[1] for data in self.dataloader_sup]).to(self.device)
+        x = torch.cat([data[0] for data in self.dataloader_train]).to(self.device) #all x samples.
+        y = torch.cat([data[1] for data in self.dataloader_train]).to(self.device)
         x = x[np.argsort(y.cpu().detach().numpy())]
         if self.args.dataset == 'webcam':
             x = self.feature_extractor(x)
@@ -132,54 +132,76 @@ class TrainerVaDE:
                                                   ).float().to(self.device)
         self.VaDE.log_var_prior.data = torch.log(torch.from_numpy(self.gmm.covariances_[self.assignation]
                                                 )).float().to(self.device)
-        torch.save(self.VaDE.state_dict(), self.args.pretrained_path)    
+        torch.save(self.VaDE.state_dict(), 'weights/pretrained_parameters_{}.pth'.format(self.args.dataset))    
 
     def save_weights_ae(self):
         """Saving the pretrained weights for the encoder, decoder, pi, mu, var.
         """
         print('Saving weights.')
         state = {'state_dict': self.autoencoder.state_dict()}
-        torch.save(state, 'weights/autoencoder_parameters.pth.tar') 
+        torch.save(state, 'weights/autoencoder_parameters_{}.pth.tar'.format(self.args.dataset))
+
+    def save_weights_vade(self):
+        """Saving the pretrained weights for the encoder, decoder, pi, mu, var.
+        """
+        print('Saving weights.')
+        state = {'state_dict': self.autoencoder.state_dict()}
+        torch.save(state, 'weights/vade_parameters_{}.pth.tar'.format(self.args.dataset)) 
 
     def train(self):
         """
         """
         if self.args.pretrain==True:
-            self.VaDE.load_state_dict(torch.load(self.args.pretrained_path,
+            self.VaDE.load_state_dict(torch.load('weights/pretrained_parameters_{}.pth'.format(self.args.dataset),
                                                  map_location=self.device))
         else:
             self.VaDE.apply(weights_init_normal)
         self.optimizer = optim.Adam(self.VaDE.parameters(), lr=self.args.lr)
         lr_scheduler = torch.optim.lr_scheduler.StepLR(
                     self.optimizer, step_size=10, gamma=0.9)
-
+        
+        self.acc = []
+        self.acc_t = []
+        self.rec = []
+        self.rec_t = []
+        self.dkl = []
+        self.dkl_t = []
+        
         self.forward_step = ComputeLosses(self.VaDE, self.args)
         print('Training VaDE...')
+        self.test_VaDE(-1)
         for epoch in range(self.args.epochs):
             self.train_VaDE(epoch)
             self.test_VaDE(epoch)
             lr_scheduler.step()
+        self.save_weights_vade()
 
 
     def train_VaDE(self, epoch):
         self.VaDE.train()
         total_loss = 0
-        for (x_s, y_s), (x_u, _) in zip(cycle(self.dataloader_sup), self.dataloader_unsup):
+        total_acc = 0
+        total_dkl = 0
+        total_rec = 0
+        for x, y in self.dataloader_train:
             self.optimizer.zero_grad()
-            x_s, y_s = x_s.to(self.device), y_s.to(self.device)
-            x_u = x_u.to(self.device)
+            x, y = x.to(self.device), y.to(self.device)
             if self.args.dataset == 'webcam':
-                x_s = self.feature_extractor(x_s)
-                x_s = x_s.detach()
-                x_u = self.feature_extractor(x_u)
-                x_u = x_u.detach()
+                x = self.feature_extractor(x)
+                x = x.detach()
 
-            loss, reconst_loss, kl_div, acc = self.forward_step.forward('train', x_s, y_s, x_u)
+            loss, reconst_loss, kl_div, acc = self.forward_step.forward('train', x, y)
             loss.backward()
             self.optimizer.step()
             total_loss += loss.item()
+            total_acc += acc
+            total_dkl += kl_div.item()
+            total_rec += reconst_loss.item()
+        self.acc.append(total_acc/len(self.dataloader_train))
+        self.dkl.append(total_dkl/len(self.dataloader_train))
+        self.rec.append(total_rec/len(self.dataloader_train))
         print('Training VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
-            total_loss/len(self.dataloader_unsup), acc))
+            total_loss/len(self.dataloader_train), total_acc/len(self.dataloader_train)))
 
 
     def test_VaDE(self, epoch):
@@ -187,16 +209,23 @@ class TrainerVaDE:
         with torch.no_grad():
             total_loss = 0
             total_acc = 0
-            for x, y in self.dataloader_unsup:
-                x = x.to(self.device)
+            total_dkl = 0
+            total_rec = 0
+            for x, y in self.dataloader_test:
+                x, y = x.to(self.device), y.to(self.device)
                 if self.args.dataset == 'webcam':
                     x = self.feature_extractor(x)
                     x = x.detach()
                 loss, reconst_loss, kl_div, acc = self.forward_step.forward('test', x, y)
                 total_loss += loss.item()
                 total_acc += acc.item()
+                total_dkl += kl_div.item()
+                total_rec += reconst_loss.item()
+        self.acc_t.append(total_acc/len(self.dataloader_test))
+        self.dkl_t.append(total_dkl/len(self.dataloader_test))
+        self.rec_t.append(total_rec/len(self.dataloader_test))
         print('Testing VaDE... Epoch: {}, Loss: {}, Acc: {}'.format(epoch, 
-                total_loss/len(self.dataloader_unsup), total_acc/len(self.dataloader_unsup)))
+                total_loss/len(self.dataloader_test), total_acc/len(self.dataloader_test)))
 
     def freeze_extractor(self):
         for _, param in self.feature_extractor.named_parameters():
