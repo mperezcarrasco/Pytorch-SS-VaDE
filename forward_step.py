@@ -14,20 +14,22 @@ class ComputeLosses:
 
     def forward(self, mode, x_sup, y_sup, x_unsup=None):
         if mode =='train':
-            reconst_loss, kl_div = self.unsupervised_loss(x_unsup)
-            unsupervised_loss = reconst_loss + kl_div
+            rec_u, kl_div_z, kl_div_c = self.unsupervised_loss(x_unsup)
+            unsupervised_loss = rec_u + kl_div_z + kl_div_c
 
-            reconst_loss, kl_div, probs = self.supervised_loss(x_sup, y_sup)
-            supervised_loss = reconst_loss + kl_div
-            loss = self.alpha * supervised_loss + (1 - self.alpha) * unsupervised_loss
+            rec_s, kl_div, clf_loss, probs = self.supervised_loss(x_sup, y_sup)
+            supervised_loss = rec_s + kl_div
+            loss = self.alpha * supervised_loss + (1 - self.alpha) * unsupervised_loss + clf_loss
             acc = self.compute_metrics(y_sup, probs)
+            reconst_loss = rec_u
 
         elif mode=='test':
-            reconst_loss, kl_div, probs = self.supervised_loss(x_sup, y_sup)
+            reconst_loss, kl_div, clf_loss, probs = self.supervised_loss(x_sup, y_sup)
             loss = reconst_loss + kl_div
             acc = self.compute_metrics(y_sup, probs)
+            kl_div_z = kl_div
 
-        return loss, reconst_loss, kl_div, acc*100
+        return loss, reconst_loss, kl_div_z, acc*100
 
     def supervised_loss(self, x, y):
         x_hat, mu, log_var, z = self.model(x)
@@ -44,8 +46,10 @@ class ComputeLosses:
         reconst_loss = F.mse_loss(x_hat, x)
 
         probs = self.compute_pcz(z, p_c)
-
-        return reconst_loss, kl_div, probs
+        
+        clf_loss = F.binary_cross_entropy(probs, y)
+        clf_loss *= self.args.cl_mul
+        return reconst_loss, kl_div, clf_loss, probs
 
     def unsupervised_loss(self, x):
         x_hat, mu, log_var, z = self.model(x)
@@ -56,6 +60,7 @@ class ComputeLosses:
         
         gamma = self.compute_pcz(z, p_c)
 
+        reconst_loss = F.binary_cross_entropy(x_hat, x, reduction='sum')
         h = log_var.exp().unsqueeze(1) + (mu.unsqueeze(1) - means).pow(2)
         h = torch.sum(torch.log(covs) + h / covs, dim=2)
         log_p_z_given_c = 0.5 * torch.sum(gamma * h)
@@ -63,11 +68,11 @@ class ComputeLosses:
         log_q_c_given_x = torch.sum(gamma * torch.log(gamma + 1e-20))
         log_q_z_given_x = 0.5 * torch.sum(1 + log_var)
 
-        kl_div = log_p_z_given_c - log_p_c +  log_q_c_given_x - log_q_z_given_x
-        kl_div /= x.size(0)
+        reconst_loss /= x.size(0)
+        kl_div_z = (log_p_z_given_c - log_q_z_given_x)/x.size(0)
+        kl_div_c = (log_q_c_given_x - log_p_c)/x.size(0)
 
-        reconst_loss = F.mse_loss(x_hat, x)
-        return reconst_loss, kl_div
+        return reconst_loss, kl_div_z, kl_div_c
     
     def compute_pcz(self, z, p_c):
         covs = self.model.log_var_prior.exp()
