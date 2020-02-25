@@ -15,7 +15,7 @@ class ComputeLosses:
         
         reconst_loss, kl_div, clf_loss, probs = self.supervised_loss(x_sup, y_sup)
         supervised_loss = reconst_loss + kl_div
-        loss = supervised_loss + 100*clf_loss
+        loss = supervised_loss + clf_loss
         acc = self.compute_metrics(y_sup, probs)
 
         return loss, reconst_loss, kl_div, acc*100
@@ -32,7 +32,7 @@ class ComputeLosses:
                             torch.pow(mu-means_batch,2)/covs_batch - \
                             (1+log_var),dim=1)*0.5 - z.size(1)*0.5*np.log(2*np.pi)))
 
-        reconst_loss = F.mse_loss(x_hat, x)
+        reconst_loss = F.binary_cross_entropy(x_hat, x)
 
         probs = self.compute_pcz(z, p_c)
         

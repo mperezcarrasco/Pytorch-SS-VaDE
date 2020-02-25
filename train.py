@@ -48,7 +48,7 @@ class TrainerVaDE:
         This initialization is usefull because reconstruction in VAEs would be weak at the begining
         and the models are likely to get stuck in local minima.
         """
-        optimizer = optim.Adam(self.autoencoder.parameters(), lr=0.002)
+        optimizer = optim.Adam(self.autoencoder.parameters(), lr=self.args.lr_ae)
         self.autoencoder.train()
         print('Training the autoencoder...')
         for epoch in range(30):
@@ -77,7 +77,7 @@ class TrainerVaDE:
         the priors (pi, mu, var) of the VaDE model.
         """
         print('Fiting Gaussian Mixture Model...')
-        x = torch.cat([data[0] for data in self.dataloader]).to(self.device) #all x samples.
+        x = torch.cat([data[0] for data in self.dataloader_train]).to(self.device) #all x samples.
         if self.args.dataset == 'webcam':
             x = self.feature_extractor(x)
             x = x.detach()
@@ -152,8 +152,8 @@ class TrainerVaDE:
         """
         """
         if self.args.pretrain==True:
-            self.VaDE.load_state_dict(torch.load('weights/pretrained_parameters_{}.pth'.format(self.args.dataset),
-                                                 map_location=self.device))
+            self.VaDE.load_state_dict(torch.load('weights/pretrained_parameters_{}.pth'.format(
+                                      self.args.dataset), map_location=self.device))
         else:
             self.VaDE.apply(weights_init_normal)
         self.optimizer = optim.Adam(self.VaDE.parameters(), lr=self.args.lr)
