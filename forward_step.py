@@ -25,7 +25,7 @@ class ComputeLosses:
 
         elif mode=='test':
             reconst_loss, kl_div, clf_loss, probs = self.supervised_loss(x_sup, y_sup)
-            loss = reconst_loss + kl_div
+            loss = reconst_loss + kl_div + clf_loss
             acc = self.compute_metrics(y_sup, probs)
             kl_div_z = kl_div
 
@@ -43,7 +43,7 @@ class ComputeLosses:
                             torch.pow(mu-means_batch,2)/covs_batch - \
                             (1+log_var),dim=1)*0.5 - z.size(1)*0.5*np.log(2*np.pi)))
 
-        reconst_loss = F.binary_cross_entropy(x_hat, x, reduction='mean')
+        reconst_loss = F.mse_loss(x_hat, x, reduction='mean')
 
         probs = self.compute_pcz(z, p_c)
         
@@ -60,7 +60,7 @@ class ComputeLosses:
         
         gamma = self.compute_pcz(z, p_c)
 
-        reconst_loss = F.binary_cross_entropy(x_hat, x, reduction='sum')
+        reconst_loss = F.mse_loss(x_hat, x, reduction='mean')
         h = log_var.exp().unsqueeze(1) + (mu.unsqueeze(1) - means).pow(2)
         h = torch.sum(torch.log(covs) + h / covs, dim=2)
         log_p_z_given_c = 0.5 * torch.sum(gamma * h)
@@ -68,7 +68,6 @@ class ComputeLosses:
         log_q_c_given_x = torch.sum(gamma * torch.log(gamma + 1e-20))
         log_q_z_given_x = 0.5 * torch.sum(1 + log_var)
 
-        reconst_loss /= x.size(0)
         kl_div_z = (log_p_z_given_c - log_q_z_given_x)/x.size(0)
         kl_div_c = (log_q_c_given_x - log_p_c)/x.size(0)
 
