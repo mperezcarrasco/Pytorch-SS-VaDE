@@ -43,11 +43,11 @@ class ComputeLosses:
                             torch.pow(mu-means_batch,2)/covs_batch - \
                             (1+log_var),dim=1)*0.5 - z.size(1)*0.5*np.log(2*np.pi)))
 
-        reconst_loss = F.mse_loss(x_hat, x)
+        reconst_loss = F.binary_cross_entropy(x_hat, x, reduction='mean')
 
         probs = self.compute_pcz(z, p_c)
         
-        clf_loss = F.binary_cross_entropy(probs, y)
+        clf_loss = F.cross_entropy(probs, y, reduction='mean')
         clf_loss *= self.args.cl_mul
         return reconst_loss, kl_div, clf_loss, probs
 

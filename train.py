@@ -214,7 +214,7 @@ class TrainerVaDE:
             total_dkl = 0
             total_rec = 0
             for x, y in self.dataloader_test:
-                x = x.to(self.device)
+                x, y = x.to(self.device), y.to(self.device)
                 if self.args.dataset == 'webcam':
                     x = self.feature_extractor(x)
                     x = x.detach()
